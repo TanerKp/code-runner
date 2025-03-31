@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+
 	"nhooyr.io/websocket"
 )
 
@@ -13,6 +14,8 @@ const (
 	WriteOutput = iota
 	WriteError
 	WriteTest
+	WriteShellStdout
+	WriteShellStderr
 )
 
 type wsWriterWrapper struct {
@@ -58,6 +61,18 @@ func (ws *WSWriter) Write(buf []byte) (int, error) {
 		_, err = ws.Con.Write(respJson)
 	case WriteTest:
 		_, err = ws.Con.Write(buf)
+	case WriteShellStdout:
+		var respJson []byte
+		resp := model.ShellResponse{Type: "output/shell/stdout", Data: string(buf)}
+		respJson, err = json.Marshal(resp)
+		_, err = ws.Con.Write(respJson)
+		ws.Output.Write(buf)
+	case WriteShellStderr:
+		var respJson []byte
+		resp := model.ShellResponse{Type: "output/shell/stderr", Data: string(buf)}
+		respJson, err = json.Marshal(resp)
+		_, err = ws.Con.Write(respJson)
+		ws.Output.Write(buf)
 	}
 	if err != nil {
 		return 0, err

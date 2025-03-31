@@ -12,11 +12,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
 	"log"
 	"net/http"
-	"nhooyr.io/websocket"
 	"time"
+
+	"github.com/google/uuid"
+	"nhooyr.io/websocket"
 )
 
 type Server struct {
@@ -136,6 +137,24 @@ func (s *Server) initRoutes() {
 						wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "code-runner failed\n\trexecute/input failed").Error()))
 						return
 					}
+				}()
+			case "execute/shell":
+				go func() {
+					var shellRequest model.ShellRequest
+					err = json.Unmarshal(buf, &shellRequest)
+					if err != nil {
+						err = errorutil.ErrorWrap(err, "code-runner failed\n\trexecute/shell failed\n\trequest encountered json parse error")
+						wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(err.Error()))
+						log.Println(err)
+						return
+					}
+					if err = shellRequest.Validate(); err != nil {
+						err = errorutil.ErrorWrap(err, "code-runner failed\n\trequest validation error")
+						wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(err.Error()))
+						log.Println(err)
+						return
+					}
+					wswriter.NewWriter(c, wswriter.WriteShellStdout).Write([]byte(shellRequest.Stdin))
 				}()
 			case "execute/test":
 				go func() {
