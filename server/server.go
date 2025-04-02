@@ -4,11 +4,14 @@ import (
 	"code-runner/config"
 	errorutil "code-runner/error_util"
 	"code-runner/model"
+	"code-runner/network/request"
 	"code-runner/network/wswriter"
 	"code-runner/services/codeRunner"
 	"code-runner/services/codeRunner/check"
 	"code-runner/services/codeRunner/input"
 	"code-runner/services/codeRunner/run"
+	"code-runner/services/container"
+	"code-runner/session"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,6 +21,10 @@ import (
 
 	"github.com/google/uuid"
 	"nhooyr.io/websocket"
+)
+
+const (
+	defaultTimeout = 10 // Default timeout in seconds
 )
 
 type Server struct {
@@ -32,7 +39,7 @@ func NewServer(port int, addr string) (*Server, error) {
 	if port < 1024 || port > 49151 {
 		return nil, errorutil.ErrorWrap(fmt.Errorf("port must be between [1024;49151] but was %d", port), "validation failed")
 	}
-	if len(addr) <= 0 {
+	if len(addr) == 0 {
 		addr = "localhost"
 	}
 	return &Server{mux: &http.ServeMux{}, port: port, addr: addr}, nil
@@ -46,167 +53,167 @@ func (s *Server) Run() {
 }
 
 func (s *Server) initRoutes() {
-	s.mux.HandleFunc("/run", func(w http.ResponseWriter, r *http.Request) {
-		var sessionKey string
-		sessionKey = uuid.New().String()
-		c, err := websocket.Accept(w, r, nil)
-		if err != nil {
-			w.WriteHeader(426)
-			return
-		}
-		defer c.Close(websocket.StatusNormalClosure, "")
-		for {
-			_, buf, err := c.Read(r.Context())
-			if err != nil {
-				if c.Ping(r.Context()) != nil {
-					break
-				}
-			}
-			var v model.Request
-			err = json.Unmarshal(buf, &v)
-			if err != nil {
-				err = errorutil.ErrorWrap(err, "code-runner failed\n\trequest encountered json parse error")
-				wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(err.Error()))
-				log.Println(err)
-				continue
-			}
-			if err = v.Validate(); err != nil {
-				err = errorutil.ErrorWrap(err, "code-runner failed\n\trequest validation error")
-				wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(err.Error()))
-				log.Println(err)
-				continue
-			}
-			switch v.Type {
-			case "execute/run":
-				go func() {
-					var runRequest model.RunRequest
-					err = json.Unmarshal(buf, &runRequest)
-					if err != nil {
-						err = errorutil.ErrorWrap(err, "code-runner failed\n\trexecute/run failed\n\trequest encountered json parse error")
-						wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(err.Error()))
-						log.Println(err)
-						return
-					}
-					if err = runRequest.Validate(); err != nil {
-						err = errorutil.ErrorWrap(err, "code-runner failed\n\trequest validation error")
-						wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(err.Error()))
-						log.Println(err)
-						return
-					}
-					data := runRequest.Data
-					if data.Timeout == 0 {
-						cconfig := config.GetContainerConfig(data.Cmd)
-						if cconfig != nil && cconfig.Timeout != 0 {
-							data.Timeout = cconfig.Timeout
-						} else {
-							data.Timeout = 10
-						}
-					}
-					wsWriter := wswriter.NewWriter(c, wswriter.WriteOutput)
-					ctx, cancel := context.WithTimeout(r.Context(), time.Duration(data.Timeout)*time.Second)
-					defer cancel()
-					err := run.Run(
-						ctx,
-						data.Cmd,
-						run.ExecuteParams{SessionKey: sessionKey, Writer: wsWriter, Files: data.Sourcefiles, MainFile: data.Mainfilename, CodeRunner: s.CodeRunner},
-					)
-					if err != nil {
-						wsWriter.WithType(wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "code-runner failed\n\trexecute/run failed").Error()))
-						return
-					}
-				}()
-				break
-			case "execute/input":
-				go func() {
-					var stdinRequest model.StdinRequest
-					err = json.Unmarshal(buf, &stdinRequest)
-					if err != nil {
-						err = errorutil.ErrorWrap(err, "code-runner failed\n\trexecute/input failed\n\trequest encountered json parse error")
-						wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(err.Error()))
-						log.Println(err)
-						return
-					}
-					if err = stdinRequest.Validate(); err != nil {
-						err = errorutil.ErrorWrap(err, "code-runner failed\n\trequest validation error")
-						wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(err.Error()))
-						log.Println(err)
-						return
-					}
-					err := input.Input(r.Context(), stdinRequest.Stdin, sessionKey)
-					if err != nil {
-						wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "code-runner failed\n\trexecute/input failed").Error()))
-						return
-					}
-				}()
-			case "execute/shell":
-				go func() {
-					var shellRequest model.ShellRequest
-					err = json.Unmarshal(buf, &shellRequest)
-					if err != nil {
-						err = errorutil.ErrorWrap(err, "code-runner failed\n\trexecute/shell failed\n\trequest encountered json parse error")
-						wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(err.Error()))
-						log.Println(err)
-						return
-					}
-					if err = shellRequest.Validate(); err != nil {
-						err = errorutil.ErrorWrap(err, "code-runner failed\n\trequest validation error")
-						wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(err.Error()))
-						log.Println(err)
-						return
-					}
-					wswriter.NewWriter(c, wswriter.WriteShellStdout).Write([]byte(shellRequest.Stdin))
-				}()
-			case "execute/test":
-				go func() {
-					var testRequest model.TestRequest
-					err = json.Unmarshal(buf, &testRequest)
-					if err != nil {
-						err = errorutil.ErrorWrap(err, "code-runner failed\n\trexecute/test failed\n\trequest encountered json parse error")
-						wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(err.Error()))
-						log.Println(err)
-						return
-					}
-					if err = testRequest.Validate(); err != nil {
-						err = errorutil.ErrorWrap(err, "code-runner failed\n\trequest validation error")
-						wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(err.Error()))
-						log.Println(err)
-						return
-					}
-					if testRequest.Data.Timeout == 0 {
-						cconfig := config.GetContainerConfig(testRequest.Data.Cmd)
-						if cconfig != nil && cconfig.Timeout != 0 {
-							testRequest.Data.Timeout = cconfig.Timeout
-						} else {
-							testRequest.Data.Timeout = 10
-						}
-					}
-					wsWriter := wswriter.NewWriter(c, wswriter.WriteOutput)
-					ctx, cancel := context.WithTimeout(r.Context(), time.Duration(testRequest.Data.Timeout)*time.Second)
-					defer cancel()
-					testResults, err := check.Check(
-						ctx,
-						testRequest.Data.Cmd,
-						check.CheckParams{Writer: wsWriter, SessionKey: sessionKey, MainFile: testRequest.Data.Mainfilename, Files: testRequest.Data.Sourcefiles,
-							Tests: testRequest.Data.Tests, CodeRunner: s.CodeRunner},
-					)
+	s.mux.HandleFunc("/run", s.handleRun)
+}
 
-					if err != nil {
-						wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "code-runner failed\n\trexecute/test failed").Error()))
-						return
-					}
-					testResult := model.TestResponse{Type: "output/test", Data: testResults}
-					testResultJson, err := json.Marshal(testResult)
-					if err != nil {
-						wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "code-runner failed\n\trexecute/test failed\n\trequest encountered json parse error").Error()))
-						log.Println(err)
-						return
-					}
-					wsWriter.WithType(wswriter.WriteTest).Write(testResultJson)
-				}()
-			default:
-				wswriter.NewWriter(c, wswriter.WriteError).Write([]byte("code-runner failed\n\tunrecognized websocket message type"))
+func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
+	sessionKey := uuid.New().String()
+	c, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		http.Error(w, "Failed to establish websocket connection", http.StatusUpgradeRequired)
+		return
+	}
+	defer s.cleanupSession(r.Context(), sessionKey, c)
+
+	for {
+		_, buf, err := c.Read(r.Context())
+		if err != nil {
+			if c.Ping(r.Context()) != nil {
+				break
+			}
+			continue
+		}
+
+		var req model.Request
+		if err := request.ParseAndValidateRequest(buf, &req, c); err != nil {
+			continue
+		}
+
+		switch req.Type {
+		case "execute/run":
+			go s.handleExecuteRun(r.Context(), buf, sessionKey, c)
+		case "execute/input":
+			go s.handleExecuteInput(r.Context(), buf, sessionKey, c)
+		case "execute/shell":
+			go s.handleExecuteShell(r.Context(), buf, sessionKey, c)
+		case "execute/test":
+			go s.handleExecuteTest(r.Context(), buf, sessionKey, c)
+		default:
+			wswriter.NewWriter(c, wswriter.WriteError).Write([]byte("Unrecognized websocket message type"))
+		}
+	}
+}
+
+func (s *Server) cleanupSession(ctx context.Context, sessionKey string, c *websocket.Conn) {
+	if err := c.Close(websocket.StatusNormalClosure, ""); err != nil {
+		log.Println(errorutil.ErrorWrap(err, "Failed to close websocket connection"))
+	}
+
+	sess, err := session.GetSession(sessionKey)
+	if err != nil {
+		log.Println(errorutil.ErrorWrap(err, "Failed to retrieve session during cleanup"))
+	} else {
+		session.DeleteSession(sessionKey)
+
+		if sess.Con != nil {
+			if err := sess.Con.Close(); err != nil {
+				log.Println(errorutil.ErrorWrap(err, "Failed to close session connection"))
 			}
 		}
-		c.Close(websocket.StatusNormalClosure, "")
+
+		if err := s.CodeRunner.ContainerService.ContainerRemove(ctx, sess.ContainerID, container.RemoveCommandParams{Force: true}); err != nil {
+			log.Println(errorutil.ErrorWrap(err, "Failed to remove container during cleanup"))
+		}
+	}
+}
+
+func (s *Server) handleExecuteRun(ctx context.Context, buf []byte, sessionKey string, c *websocket.Conn) {
+	var runRequest model.RunRequest
+	if err := request.ParseAndValidateRequest(buf, &runRequest, c); err != nil {
+		return
+	}
+
+	data := runRequest.Data
+	if data.Timeout == 0 {
+		data.Timeout = s.getDefaultTimeout(data.Cmd)
+	}
+
+	wsWriter := wswriter.NewWriter(c, wswriter.WriteOutput)
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(data.Timeout)*time.Second)
+	defer cancel()
+
+	err := run.Run(ctx, data.Cmd, run.ExecuteParams{
+		SessionKey: sessionKey,
+		Writer:     wsWriter,
+		Files:      data.Sourcefiles,
+		MainFile:   data.Mainfilename,
+		CodeRunner: s.CodeRunner,
 	})
+	if err != nil {
+		wsWriter.WithType(wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "Execute/run failed").Error()))
+	}
+}
+
+func (s *Server) handleExecuteInput(ctx context.Context, buf []byte, sessionKey string, c *websocket.Conn) {
+	var stdinRequest model.StdinRequest
+	if err := request.ParseAndValidateRequest(buf, &stdinRequest, c); err != nil {
+		return
+	}
+
+	if err := input.Input(ctx, stdinRequest.Stdin, sessionKey); err != nil {
+		wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "Execute/input failed").Error()))
+	}
+}
+
+func (s *Server) handleExecuteShell(ctx context.Context, buf []byte, sessionKey string, c *websocket.Conn) {
+	var shellRequest model.ShellRequest
+	if err := request.ParseAndValidateRequest(buf, &shellRequest, c); err != nil {
+		return
+	}
+
+	if shellRequest.Stdin == "" {
+		wswriter.NewWriter(c, wswriter.WriteError).Write([]byte("Empty stdin"))
+		return
+	}
+
+	//? DEMO: Return the shell request as a response
+	wswriter.NewWriter(c, wswriter.WriteShell).Write([]byte(shellRequest.Stdin))
+
+	// TODO: EXECUTE SHELL COMMAND
+}
+
+func (s *Server) handleExecuteTest(ctx context.Context, buf []byte, sessionKey string, c *websocket.Conn) {
+	var testRequest model.TestRequest
+	if err := request.ParseAndValidateRequest(buf, &testRequest, c); err != nil {
+		return
+	}
+
+	data := testRequest.Data
+	if data.Timeout == 0 {
+		data.Timeout = s.getDefaultTimeout(data.Cmd)
+	}
+
+	wsWriter := wswriter.NewWriter(c, wswriter.WriteOutput)
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(data.Timeout)*time.Second)
+	defer cancel()
+
+	testResults, err := check.Check(ctx, data.Cmd, check.CheckParams{
+		Writer:     wsWriter,
+		SessionKey: sessionKey,
+		MainFile:   data.Mainfilename,
+		Files:      data.Sourcefiles,
+		Tests:      data.Tests,
+		CodeRunner: s.CodeRunner,
+	})
+	if err != nil {
+		wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "Execute/test failed").Error()))
+		return
+	}
+
+	testResult := model.TestResponse{Type: "output/test", Data: testResults}
+	testResultJSON, err := json.Marshal(testResult)
+	if err != nil {
+		wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "JSON marshal error").Error()))
+		log.Println(err)
+		return
+	}
+	wsWriter.WithType(wswriter.WriteTest).Write(testResultJSON)
+}
+
+func (s *Server) getDefaultTimeout(cmd string) int {
+	cconfig := config.GetContainerConfig(cmd)
+	if cconfig != nil && cconfig.Timeout != 0 {
+		return cconfig.Timeout
+	}
+	return defaultTimeout
 }
