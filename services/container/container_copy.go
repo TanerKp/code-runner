@@ -32,6 +32,8 @@ func (cs *Service) CopyToContainer(ctx context.Context, id string, files []*mode
 			return errorutil.ErrorWrap(err, fmt.Sprintf("could not copy files into docker container %q", id))
 		}
 	}
+
+	time.Sleep(time.Millisecond * 100) // Todo: Replace with a better solution to wait for the container to be ready
 	return nil
 }
 func (cs *Service) CopyFromContainer(ctx context.Context, id string, path string) (string, error) {
