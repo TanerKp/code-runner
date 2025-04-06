@@ -20,7 +20,6 @@ Example configuration file:
       "image": "eclipse-temurin:20-jdk",
       "compilationCmd": "javac *.java",
       "executionCmd": "java {{getSubstringUntil .FileName \".\"}}",
-      "reserveContainerAmount": 0,
       "Memory": 100,
       "CPU": 0.5,
       "readOnly": true
@@ -34,7 +33,6 @@ Example configuration file:
       "reportExtractor": "junit-5-out",
       "Memory": 100,
       "CPU": 2,
-      "reserveContainerAmount": 0,
       "readOnly": false
     }
   ]
@@ -50,7 +48,6 @@ Example configuration file:
 - reportPath: which path the test report is written to (inside the container)
 - Memory: container memory limit
 - CPU: container CPU limit
-- reserveContainerAmount: start containers beforehand to save on startup time
 - readOnly: wether file access should be possible
 - diskSize: size of disk if readOnly is set to false
 

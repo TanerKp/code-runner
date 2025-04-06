@@ -39,36 +39,21 @@ type ContainerService interface {
 type Service struct {
 	sync.Mutex
 	sync.Once
-	ContainerService   ContainerService
-	SchedulerService   *scheduler.Scheduler
-	reservedContainers map[string][]string
-	containers         map[string]struct{}
+	ContainerService ContainerService
+	SchedulerService *scheduler.Scheduler
+	containers       map[string]struct{}
 }
 
 func NewService(ctx context.Context, containerService ContainerService, schedulerService *scheduler.Scheduler) *Service {
 	s := &Service{ContainerService: containerService, SchedulerService: schedulerService}
 	s.Do(func() {
 		var buf bytes.Buffer
-		s.reservedContainers = make(map[string][]string)
 		s.containers = make(map[string]struct{})
 		for _, cc := range config.Conf.ContainerConfig {
 			//pulling images of config file
 			err := s.ContainerService.PullImage(ctx, cc.Image, &buf)
 			if err != nil {
 				log.Fatalf(errorutil.ErrorWrap(err, fmt.Sprintf("could not pull container image %s", cc.Image)).Error())
-			}
-			//reserving reservedContainers
-			if cc.ReserveContainerAmount > 0 {
-				for i := 0; i < cc.ReserveContainerAmount; i++ {
-					func() {
-						ctx, cancel := context.WithTimeout(ctx, pullImageTimeout)
-						defer cancel()
-						id, _ := s.ContainerService.CreateAndStartContainer(ctx, cc.Image, container.ContainerCreateParams{Memory: cc.Memory, CPU: cc.CPU, ReadOnly: cc.ReadOnly, DiskSize: cc.DiskSize})
-						s.Lock()
-						defer s.Unlock()
-						s.reservedContainers[cc.ID] = append(s.reservedContainers[cc.ID], id)
-					}()
-				}
 			}
 		}
 		io.Copy(os.Stdout, &buf)
@@ -113,30 +98,19 @@ func (s *Service) GetContainer(ctx context.Context, cmdID string, sessionKey str
 		containerID = sess.ContainerID
 	}
 	if _, ok := s.containers[containerID]; !ok {
-		relevantContainers := s.reservedContainers[containerConf.ID]
-		if len(relevantContainers) > 0 {
-			func() {
-				s.Lock()
-				defer s.Unlock()
-				relevantContainer := relevantContainers[len(relevantContainers)-1]
-				s.containers[relevantContainer] = struct{}{}
-				containerID = relevantContainer
-				s.reservedContainers[containerConf.ID] = s.reservedContainers[containerConf.ID][:len(relevantContainers)-1]
-			}()
-		} else {
-			var err error
-			containerID, err = s.ContainerService.CreateAndStartContainer(ctx, containerConf.Image, container.ContainerCreateParams{Memory: containerConf.Memory, CPU: containerConf.CPU, ReadOnly: containerConf.ReadOnly, DiskSize: containerConf.DiskSize})
-			if err != nil {
-				return nil, "", err
-			}
-			func() {
-				s.Lock()
-				defer s.Unlock()
-				s.containers[containerID] = struct{}{}
-			}()
+		var err error
+		containerID, err = s.ContainerService.CreateAndStartContainer(ctx, containerConf.Image, container.ContainerCreateParams{Memory: containerConf.Memory, CPU: containerConf.CPU, ReadOnly: containerConf.ReadOnly, DiskSize: containerConf.DiskSize})
+		if err != nil {
+			return nil, "", err
 		}
+		func() {
+			s.Lock()
+			defer s.Unlock()
+			s.containers[containerID] = struct{}{}
+		}()
 	}
-	sess = session.PutSession(sessionKey, &session.Session{ContainerID: containerID, CmdID: containerConf.ID, Updated: time.Now()})
+
+	session.PutSession(sessionKey, &session.Session{ContainerID: containerID, CmdID: containerConf.ID, Updated: time.Now()})
 	return containerConf, containerID, nil
 }
 func (s *Service) Compile(ctx context.Context, containerID string, compilationCmd string, writer wswriter.Writer) error {
@@ -154,11 +128,6 @@ func (s *Service) Compile(ctx context.Context, containerID string, compilationCm
 	return nil
 }
 func (s *Service) Shutdown(ctx context.Context) {
-	for _, v := range s.reservedContainers {
-		for _, id := range v {
-			_ = s.ContainerService.ContainerRemove(ctx, id, container.RemoveCommandParams{Force: true})
-		}
-	}
 	for id := range s.containers {
 		_ = s.ContainerService.ContainerRemove(ctx, id, container.RemoveCommandParams{Force: true})
 	}

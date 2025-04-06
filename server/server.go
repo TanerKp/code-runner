@@ -95,22 +95,12 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) cleanupSession(ctx context.Context, sessionKey string, c *websocket.Conn) {
-	if err := c.Close(websocket.StatusNormalClosure, ""); err != nil {
-		log.Println(errorutil.ErrorWrap(err, "Failed to close websocket connection"))
-	}
-
 	sess, err := session.GetSession(sessionKey)
 	if err != nil {
 		log.Println(errorutil.ErrorWrap(err, "Failed to retrieve session during cleanup"))
 	} else {
+		defer sess.Con.Close()
 		session.DeleteSession(sessionKey)
-
-		if sess.Con != nil {
-			if err := sess.Con.Close(); err != nil {
-				log.Println(errorutil.ErrorWrap(err, "Failed to close session connection"))
-			}
-		}
-
 		if err := s.CodeRunner.ContainerService.ContainerRemove(ctx, sess.ContainerID, container.RemoveCommandParams{Force: true}); err != nil {
 			log.Println(errorutil.ErrorWrap(err, "Failed to remove container during cleanup"))
 		}
