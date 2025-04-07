@@ -29,7 +29,7 @@ type ContainerService interface {
 	CopyFromContainer(context.Context, string, string) (string, error)
 	GetReturnCode(context.Context, string) (int, error)
 	GetContainers(context.Context) ([]string, error)
-	CreateInteractiveShell(ctx context.Context, id string, user string) (io.ReadWriteCloser, error)
+	CreateInteractiveShell(ctx context.Context, id string) (io.ReadWriteCloser, error)
 	ExecuteCommand(ctx context.Context, con io.ReadWriteCloser, stdin string) error
 }
 type Service struct {
@@ -120,7 +120,7 @@ func (s *Service) GetContainerConnection(ctx context.Context, sessionKey string,
 		return sess.Con, nil
 	}
 
-	con, err := s.ContainerService.CreateInteractiveShell(ctx, containerID, "nobody")
+	con, err := s.ContainerService.CreateInteractiveShell(ctx, containerID)
 	if err != nil {
 		return nil, fmt.Errorf("could not create interactive shell: %v", err)
 	}

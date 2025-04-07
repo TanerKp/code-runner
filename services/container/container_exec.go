@@ -27,9 +27,9 @@ func (cs *Service) ExecuteCommand(ctx context.Context, con io.ReadWriteCloser, s
 	return err
 }
 
-func (cs *Service) CreateInteractiveShell(ctx context.Context, id string, user string) (io.ReadWriteCloser, error) {
+func (cs *Service) CreateInteractiveShell(ctx context.Context, id string) (io.ReadWriteCloser, error) {
 	exec, err := cs.cli.ContainerExecCreate(ctx, id, types.ExecConfig{
-		User:         user,
+		User:         "nobody",
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
