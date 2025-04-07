@@ -63,7 +63,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to establish websocket connection", http.StatusUpgradeRequired)
 		return
 	}
-	defer s.cleanupSession(r.Context(), sessionKey, c)
+	defer s.cleanupSession(r.Context(), sessionKey)
 
 	for {
 		_, buf, err := c.Read(r.Context())
@@ -94,12 +94,13 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) cleanupSession(ctx context.Context, sessionKey string, c *websocket.Conn) {
+func (s *Server) cleanupSession(ctx context.Context, sessionKey string) {
 	sess, err := session.GetSession(sessionKey)
 	if err != nil {
 		log.Println(errorutil.ErrorWrap(err, "Failed to retrieve session during cleanup"))
 	} else {
 		defer sess.Con.Close()
+		defer sess.CancelFunc()
 		session.DeleteSession(sessionKey)
 		if err := s.CodeRunner.ContainerService.ContainerRemove(ctx, sess.ContainerID, container.RemoveCommandParams{Force: true}); err != nil {
 			log.Println(errorutil.ErrorWrap(err, "Failed to remove container during cleanup"))

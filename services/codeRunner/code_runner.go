@@ -20,12 +20,6 @@ import (
 	"time"
 )
 
-var (
-	mu               sync.Mutex
-	once             sync.Once
-	pullImageTimeout = 10000 * time.Millisecond
-)
-
 type ContainerService interface {
 	RunCommand(context.Context, string, container.RunCommandParams) (io.ReadWriteCloser, string, error)
 	CreateAndStartContainer(context.Context, string, container.ContainerCreateParams) (string, error)
@@ -35,6 +29,8 @@ type ContainerService interface {
 	CopyFromContainer(context.Context, string, string) (string, error)
 	GetReturnCode(context.Context, string) (int, error)
 	GetContainers(context.Context) ([]string, error)
+	CreateInteractiveShell(ctx context.Context, id string, user string) (io.ReadWriteCloser, error)
+	ExecuteCommand(ctx context.Context, con io.ReadWriteCloser, stdin string) error
 }
 type Service struct {
 	sync.Mutex
@@ -86,33 +82,84 @@ func NewService(ctx context.Context, containerService ContainerService, schedule
 	})
 	return s
 }
+
 func (s *Service) GetContainer(ctx context.Context, cmdID string, sessionKey string) (*config.ContainerConfig, string, error) {
 	containerConf := config.GetContainerConfig(cmdID)
 	if containerConf == nil || containerConf.ID == "" {
 		message := fmt.Errorf("no configuration found for %q", cmdID)
 		return nil, "", message
 	}
-	var containerID string
 	sess, err := session.GetSession(sessionKey)
 	if err == nil && cmdID == sess.CmdID {
-		containerID = sess.ContainerID
-	}
-	if _, ok := s.containers[containerID]; !ok {
-		var err error
-		containerID, err = s.ContainerService.CreateAndStartContainer(ctx, containerConf.Image, container.ContainerCreateParams{Memory: containerConf.Memory, CPU: containerConf.CPU, ReadOnly: containerConf.ReadOnly, DiskSize: containerConf.DiskSize})
-		if err != nil {
-			return nil, "", err
-		}
-		func() {
-			s.Lock()
-			defer s.Unlock()
-			s.containers[containerID] = struct{}{}
-		}()
+		return containerConf, sess.ContainerID, nil
 	}
 
-	session.PutSession(sessionKey, &session.Session{ContainerID: containerID, CmdID: containerConf.ID, Updated: time.Now()})
+	containerID, err := s.ContainerService.CreateAndStartContainer(ctx, containerConf.Image, container.ContainerCreateParams{Memory: containerConf.Memory, CPU: containerConf.CPU, ReadOnly: containerConf.ReadOnly, DiskSize: containerConf.DiskSize})
+	if err != nil {
+		return nil, "", err
+	}
+
+	func() {
+		s.Lock()
+		defer s.Unlock()
+		s.containers[containerID] = struct{}{}
+	}()
+
+	session.PutSession(sessionKey, &session.Session{ContainerID: containerID, CmdID: cmdID, Updated: time.Now()})
+
 	return containerConf, containerID, nil
 }
+
+func (s *Service) GetContainerConnection(ctx context.Context, sessionKey string, containerID string, writer wswriter.Writer) (io.ReadWriteCloser, error) {
+	sess, err := session.GetSession(sessionKey)
+	if err != nil && sess != nil {
+		return nil, fmt.Errorf("could not retrieve session with key %q", sessionKey)
+	}
+
+	if sess != nil && sess.Con != nil {
+		return sess.Con, nil
+	}
+
+	con, err := s.ContainerService.CreateInteractiveShell(ctx, containerID, "nobody")
+	if err != nil {
+		return nil, fmt.Errorf("could not create interactive shell: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	session.PutSession(sessionKey, &session.Session{
+		ContainerID: containerID,
+		Con:         con,
+		CmdID:       sess.CmdID,
+		Updated:     time.Now(),
+		CancelFunc:  cancel,
+	})
+
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				n, err := con.Read(buf)
+				if err != nil {
+					if err == io.EOF {
+						return
+					}
+					writer.WithType(wswriter.WriteError).Write([]byte("Error reading from container: " + err.Error()))
+					return
+				}
+				if n > 0 {
+					writer.WithType(wswriter.WriteShell).Write(buf[:n])
+				}
+			}
+		}
+	}()
+
+	return con, nil
+}
+
 func (s *Service) Compile(ctx context.Context, containerID string, compilationCmd string, writer wswriter.Writer) error {
 	if len(compilationCmd) > 0 {
 		con, _, err := s.ContainerService.RunCommand(context.Background(), containerID, container.RunCommandParams{Cmd: compilationCmd})

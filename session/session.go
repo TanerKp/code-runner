@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"sync"
@@ -17,6 +18,7 @@ type Session struct {
 	ContainerID string
 	CmdID       string
 	Con         io.ReadWriteCloser
+	CancelFunc  context.CancelFunc
 	Updated     time.Time
 }
 
