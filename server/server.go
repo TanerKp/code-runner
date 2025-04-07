@@ -10,6 +10,7 @@ import (
 	"code-runner/services/codeRunner/check"
 	"code-runner/services/codeRunner/input"
 	"code-runner/services/codeRunner/run"
+	"code-runner/services/codeRunner/shell"
 	"code-runner/services/container"
 	"code-runner/session"
 	"context"
@@ -157,10 +158,10 @@ func (s *Server) handleExecuteShell(ctx context.Context, buf []byte, sessionKey 
 		return
 	}
 
-	//? DEMO: Return the shell request as a response
-	wswriter.NewWriter(c, wswriter.WriteShell).Write([]byte(shellRequest.Stdin))
-
-	// TODO: EXECUTE SHELL COMMAND
+	err := shell.ShellExecute(ctx, shell.ShellExecuteParams{SessionKey: sessionKey, Stdin: shellRequest.Stdin, CodeRunner: s.CodeRunner})
+	if err != nil {
+		wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "Execute/shell failed").Error()))
+	}
 }
 
 func (s *Server) handleExecuteTest(ctx context.Context, buf []byte, sessionKey string, c *websocket.Conn) {
