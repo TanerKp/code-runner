@@ -23,7 +23,6 @@ func Run(ctx context.Context, id string, params ExecuteParams) error {
 		log.Println(errorutil.ErrorWrap(errorSlug, errorutil.ErrorWrap(err, message).Error()))
 		return errorutil.ErrorWrap(errorSlug, message)
 	}
-
 	err = params.CodeRunner.ContainerService.CopyToContainer(ctx, containerID, params.Files)
 	if err != nil {
 		message := "could not add files to sandbox environment"
@@ -45,7 +44,6 @@ func Run(ctx context.Context, id string, params ExecuteParams) error {
 		log.Println(errorutil.ErrorWrap(errorSlug, errorutil.ErrorWrap(err, message).Error()))
 		return errorutil.ErrorWrap(errorSlug, message)
 	}
-	// con, _, err := params.CodeRunner.ContainerService.RunCommand(context.Background(), containerID, container.RunCommandParams{Cmd: cmd, User: "nobody"})
 	err = params.CodeRunner.ContainerService.ExecuteCommand(ctx, con, cmd)
 	if err != nil {
 		message := fmt.Sprintf("could not execute program with command %q", cmd)
@@ -53,24 +51,5 @@ func Run(ctx context.Context, id string, params ExecuteParams) error {
 		log.Println(errorutil.ErrorWrap(errorSlug, errorutil.ErrorWrap(err, message).Error()))
 		return errorutil.ErrorWrap(errorSlug, message)
 	}
-	// defer con.Close()
-	// sess, err := session.GetSession(params.SessionKey)
-	// if err != nil {
-	// 	message := fmt.Sprintf("could not retreive user session with key %q", params.SessionKey)
-	// 	errorSlug := errorutil.ErrorSlug()
-	// 	log.Println(errorutil.ErrorWrap(errorSlug, errorutil.ErrorWrap(err, message).Error()))
-	// 	return errorutil.ErrorWrap(errorSlug, message)
-	// }
-	// sess. Con = con
-	// err = params.CodeRunner.CopyWithTimeout(ctx)(params.Writer.WithType(wswriter.WriteOutput), con)
-	// if err != nil {
-	// 	message := fmt.Sprintf("could not execute command %q, please try again", cmd)
-	// 	if errors.Is(err, errorutil.TimeoutErr) {
-	// 		message = fmt.Sprintf("could not execute command %q, because it timed out", cmd)
-	// 	}
-	// 	errorSlug := errorutil.ErrorSlug()
-	// 	log.Println(errorutil.ErrorWrap(errorSlug, errorutil.ErrorWrap(err, message).Error()))
-	// 	return errorutil.ErrorWrap(errorSlug, message)
-	// }
 	return nil
 }

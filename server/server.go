@@ -8,7 +8,6 @@ import (
 	"code-runner/network/wswriter"
 	"code-runner/services/codeRunner"
 	"code-runner/services/codeRunner/check"
-	"code-runner/services/codeRunner/input"
 	"code-runner/services/codeRunner/run"
 	"code-runner/services/codeRunner/shell"
 	"code-runner/services/container"
@@ -83,12 +82,10 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		switch req.Type {
 		case "execute/run":
 			go s.handleExecuteRun(r.Context(), buf, sessionKey, c)
-		case "execute/input":
-			go s.handleExecuteInput(r.Context(), buf, sessionKey, c)
-		case "execute/shell":
-			go s.handleExecuteShell(r.Context(), buf, sessionKey, c)
 		case "execute/test":
 			go s.handleExecuteTest(r.Context(), buf, sessionKey, c)
+		case "execute/shell":
+			go s.handleExecuteShell(r.Context(), buf, sessionKey, c)
 		default:
 			wswriter.NewWriter(c, wswriter.WriteError).Write([]byte("Unrecognized websocket message type"))
 		}
@@ -136,34 +133,6 @@ func (s *Server) handleExecuteRun(ctx context.Context, buf []byte, sessionKey st
 	}
 }
 
-func (s *Server) handleExecuteInput(ctx context.Context, buf []byte, sessionKey string, c *websocket.Conn) {
-	var stdinRequest model.StdinRequest
-	if err := request.ParseAndValidateRequest(buf, &stdinRequest, c); err != nil {
-		return
-	}
-
-	if err := input.Input(ctx, stdinRequest.Stdin, sessionKey); err != nil {
-		wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "Execute/input failed").Error()))
-	}
-}
-
-func (s *Server) handleExecuteShell(ctx context.Context, buf []byte, sessionKey string, c *websocket.Conn) {
-	var shellRequest model.ShellRequest
-	if err := request.ParseAndValidateRequest(buf, &shellRequest, c); err != nil {
-		return
-	}
-
-	if shellRequest.Stdin == "" {
-		wswriter.NewWriter(c, wswriter.WriteError).Write([]byte("Empty stdin"))
-		return
-	}
-
-	err := shell.ShellExecute(ctx, shell.ShellExecuteParams{SessionKey: sessionKey, Stdin: shellRequest.Stdin, CodeRunner: s.CodeRunner})
-	if err != nil {
-		wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "Execute/shell failed").Error()))
-	}
-}
-
 func (s *Server) handleExecuteTest(ctx context.Context, buf []byte, sessionKey string, c *websocket.Conn) {
 	var testRequest model.TestRequest
 	if err := request.ParseAndValidateRequest(buf, &testRequest, c); err != nil {
@@ -200,6 +169,23 @@ func (s *Server) handleExecuteTest(ctx context.Context, buf []byte, sessionKey s
 		return
 	}
 	wsWriter.WithType(wswriter.WriteTest).Write(testResultJSON)
+}
+
+func (s *Server) handleExecuteShell(ctx context.Context, buf []byte, sessionKey string, c *websocket.Conn) {
+	var shellRequest model.ShellRequest
+	if err := request.ParseAndValidateRequest(buf, &shellRequest, c); err != nil {
+		return
+	}
+
+	if shellRequest.Stdin == "" {
+		wswriter.NewWriter(c, wswriter.WriteError).Write([]byte("Empty stdin"))
+		return
+	}
+
+	err := shell.ShellExecute(ctx, shell.ShellExecuteParams{SessionKey: sessionKey, Stdin: shellRequest.Stdin, CodeRunner: s.CodeRunner})
+	if err != nil {
+		wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "Execute/shell failed").Error()))
+	}
 }
 
 func (s *Server) getDefaultTimeout(cmd string) int {
