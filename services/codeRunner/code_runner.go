@@ -112,12 +112,10 @@ func (s *Service) GetContainer(ctx context.Context, cmdID string, sessionKey str
 
 func (s *Service) GetContainerConnection(ctx context.Context, sessionKey string, containerID string, writer wswriter.Writer) (io.ReadWriteCloser, error) {
 	sess, err := session.GetSession(sessionKey)
-	if err != nil && sess != nil {
+	if err != nil || sess == nil {
 		return nil, fmt.Errorf("could not retrieve session with key %q", sessionKey)
-	}
-
-	if sess != nil && sess.Con != nil {
-		return sess.Con, nil
+	} else {
+		session.StopSession(sessionKey)
 	}
 
 	con, err := s.ContainerService.CreateInteractiveShell(ctx, containerID)
@@ -144,7 +142,7 @@ func (s *Service) GetContainerConnection(ctx context.Context, sessionKey string,
 			default:
 				n, err := con.Read(buf)
 				if err != nil {
-					if err == io.EOF {
+					if err == io.EOF || strings.Contains(err.Error(), "use of closed network connection") {
 						return
 					}
 					writer.WithType(wswriter.WriteError).Write([]byte("Error reading from container: " + err.Error()))

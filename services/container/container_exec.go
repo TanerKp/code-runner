@@ -33,7 +33,7 @@ func (cs *Service) CreateInteractiveShell(ctx context.Context, id string) (io.Re
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
-		Tty:          true,
+		Tty:          false, // returns only one message without input
 		WorkingDir:   "/code-runner",
 		Cmd:          []string{"/bin/sh"},
 	})

@@ -97,8 +97,7 @@ func (s *Server) cleanupSession(ctx context.Context, sessionKey string) {
 	if err != nil {
 		log.Println(errorutil.ErrorWrap(err, "Failed to retrieve session during cleanup"))
 	} else {
-		defer sess.Con.Close()
-		defer sess.CancelFunc()
+		session.StopSession(sessionKey)
 		session.DeleteSession(sessionKey)
 		if err := s.CodeRunner.ContainerService.ContainerRemove(ctx, sess.ContainerID, container.RemoveCommandParams{Force: true}); err != nil {
 			log.Println(errorutil.ErrorWrap(err, "Failed to remove container during cleanup"))

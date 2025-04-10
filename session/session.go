@@ -53,3 +53,21 @@ func DeleteSession(key string) {
 	defer mu.Unlock()
 	delete(sessions, key)
 }
+
+func StopSession(key string) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	sess, ok := sessions[key]
+	if !ok || sess == nil {
+		return
+	}
+
+	if sess.Con != nil {
+		_ = sess.Con.Close()
+	}
+
+	if sess.CancelFunc != nil {
+		sess.CancelFunc()
+	}
+}
