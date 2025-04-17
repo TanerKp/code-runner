@@ -95,6 +95,7 @@ Example API payload:
 
 ```json
 {
+  "id": "5a37fbe9-6fed-47f9-a42f-add804e4e82c",
   "type": "execute/run",
   "data": {
     "cmd": "java-20",
@@ -115,6 +116,7 @@ Add input, if example waits for input.
 
 ```json
 {
+  "id": "3b53877b-792c-45a8-ac25-cb8605a57a2d",
   "type": "execute/run",
   "data": {
     "cmd": "java-20",
@@ -142,6 +144,7 @@ Run test with test framework, e.g., JUnit or Output compare
 
 ```json
 {
+  "id": "d385e01a-34af-454c-9afa-4ef7cc74c3f9",
   "type": "execute/test",
   "data": {
     "cmd": "java",

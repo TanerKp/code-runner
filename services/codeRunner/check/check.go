@@ -20,7 +20,7 @@ func Check(ctx context.Context, cmdID string, params CheckParams) ([]*model.Test
 		log.Println(errorutil.ErrorWrap(errorSlug, errorutil.ErrorWrap(err, message).Error()))
 		return nil, errorutil.ErrorWrap(errorSlug, message)
 	}
-	_, err = params.CodeRunner.GetContainerConnection(ctx, params.SessionKey, containerID, params.Writer)
+	_, err = params.CodeRunner.GetContainerConnection(ctx, params.SessionKey, containerID, params.Writer, params.RequestId)
 	if err != nil {
 		message := fmt.Sprintf("could not create connection to container %q", containerID)
 		errorSlug := errorutil.ErrorSlug()

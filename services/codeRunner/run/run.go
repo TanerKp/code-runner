@@ -16,7 +16,7 @@ func Run(ctx context.Context, id string, params ExecuteParams) error {
 		log.Println(errorutil.ErrorWrap(errorSlug, errorutil.ErrorWrap(err, message).Error()))
 		return errorutil.ErrorWrap(errorSlug, message)
 	}
-	con, err := params.CodeRunner.GetContainerConnection(ctx, params.SessionKey, containerID, params.Writer)
+	con, err := params.CodeRunner.GetContainerConnection(ctx, params.SessionKey, containerID, params.Writer, params.RequestId)
 	if err != nil {
 		message := fmt.Sprintf("could not create connection to container %q", containerID)
 		errorSlug := errorutil.ErrorSlug()

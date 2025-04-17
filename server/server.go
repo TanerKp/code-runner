@@ -81,9 +81,9 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 
 		switch req.Type {
 		case "execute/run":
-			go s.handleExecuteRun(r.Context(), buf, sessionKey, c)
+			go s.handleExecuteRun(r.Context(), buf, sessionKey, c, req.Id)
 		case "execute/test":
-			go s.handleExecuteTest(r.Context(), buf, sessionKey, c)
+			go s.handleExecuteTest(r.Context(), buf, sessionKey, c, req.Id)
 		case "execute/shell":
 			go s.handleExecuteShell(r.Context(), buf, sessionKey, c)
 		default:
@@ -105,9 +105,10 @@ func (s *Server) cleanupSession(ctx context.Context, sessionKey string) {
 	}
 }
 
-func (s *Server) handleExecuteRun(ctx context.Context, buf []byte, sessionKey string, c *websocket.Conn) {
+func (s *Server) handleExecuteRun(ctx context.Context, buf []byte, sessionKey string, c *websocket.Conn, rId string) {
 	var runRequest model.RunRequest
 	if err := request.ParseAndValidateRequest(buf, &runRequest, c); err != nil {
+		wswriter.NewWriter(c, wswriter.WriteEnd).Write([]byte(rId))
 		return
 	}
 
@@ -126,14 +127,16 @@ func (s *Server) handleExecuteRun(ctx context.Context, buf []byte, sessionKey st
 		Files:      data.Sourcefiles,
 		MainFile:   data.Mainfilename,
 		CodeRunner: s.CodeRunner,
+		RequestId:  rId,
 	})
 	if err != nil {
 		wsWriter.WithType(wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "Execute/run failed").Error()))
-		wsWriter.WithType(wswriter.WriteEnd).Write([]byte(errorutil.ErrorWrap(err, "Execute/run failed").Error()))
+		wsWriter.WithType(wswriter.WriteEnd).Write([]byte(rId))
 	}
+
 }
 
-func (s *Server) handleExecuteTest(ctx context.Context, buf []byte, sessionKey string, c *websocket.Conn) {
+func (s *Server) handleExecuteTest(ctx context.Context, buf []byte, sessionKey string, c *websocket.Conn, rId string) {
 	var testRequest model.TestRequest
 	if err := request.ParseAndValidateRequest(buf, &testRequest, c); err != nil {
 		return
@@ -155,10 +158,11 @@ func (s *Server) handleExecuteTest(ctx context.Context, buf []byte, sessionKey s
 		Files:      data.Sourcefiles,
 		Tests:      data.Tests,
 		CodeRunner: s.CodeRunner,
+		RequestId:  rId,
 	})
 	if err != nil {
 		wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "Execute/test failed").Error()))
-		wswriter.NewWriter(c, wswriter.WriteEnd).Write([]byte(errorutil.ErrorWrap(err, "Execute/test failed").Error()))
+		wswriter.NewWriter(c, wswriter.WriteEnd).Write([]byte(rId))
 		return
 	}
 
@@ -170,7 +174,7 @@ func (s *Server) handleExecuteTest(ctx context.Context, buf []byte, sessionKey s
 		return
 	}
 	wsWriter.WithType(wswriter.WriteTest).Write(testResultJSON)
-	wsWriter.WithType(wswriter.WriteEnd).Write([]byte(""))
+	wsWriter.WithType(wswriter.WriteEnd).Write([]byte(rId))
 }
 
 func (s *Server) handleExecuteShell(ctx context.Context, buf []byte, sessionKey string, c *websocket.Conn) {
@@ -187,8 +191,6 @@ func (s *Server) handleExecuteShell(ctx context.Context, buf []byte, sessionKey 
 	err := shell.ShellExecute(ctx, shell.ShellExecuteParams{SessionKey: sessionKey, Stdin: shellRequest.Stdin, CodeRunner: s.CodeRunner})
 	if err != nil {
 		wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "Execute/shell failed").Error()))
-		wswriter.NewWriter(c, wswriter.WriteEnd).Write([]byte(errorutil.ErrorWrap(err, "Execute/shell failed").Error()))
-
 	}
 }
 

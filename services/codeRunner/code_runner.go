@@ -110,7 +110,7 @@ func (s *Service) GetContainer(ctx context.Context, cmdID string, sessionKey str
 	return containerConf, containerID, nil
 }
 
-func (s *Service) GetContainerConnection(ctx context.Context, sessionKey string, containerID string, writer wswriter.Writer) (io.ReadWriteCloser, error) {
+func (s *Service) GetContainerConnection(ctx context.Context, sessionKey string, containerID string, writer wswriter.Writer, rId string) (io.ReadWriteCloser, error) {
 	sess, err := session.GetSession(sessionKey)
 	if err != nil || sess == nil {
 		return nil, fmt.Errorf("could not retrieve session with key %q", sessionKey)
@@ -158,7 +158,7 @@ func (s *Service) GetContainerConnection(ctx context.Context, sessionKey string,
 
 					// Handle end marker
 					if strings.Contains(output, "__DONE__") {
-						writer.WithType(wswriter.WriteEnd).Write(nil)
+						writer.WithType(wswriter.WriteEnd).Write([]byte(rId))
 						continue
 					}
 

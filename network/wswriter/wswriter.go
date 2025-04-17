@@ -60,7 +60,7 @@ func (ws *WSWriter) Write(buf []byte) (int, error) {
 		_, err = ws.Con.Write(respJson)
 	case WriteEnd:
 		var respJson []byte
-		resp := model.ErrorResponse{Type: "output/end", Error: string(buf)}
+		resp := model.DoneResponse{Type: "output/end", Id: string(buf)}
 		respJson, _ = json.Marshal(resp)
 		_, err = ws.Con.Write(respJson)
 	case WriteTest:
