@@ -14,6 +14,7 @@ const (
 	WriteOutput = iota
 	WriteError
 	WriteTest
+	WriteEnd
 )
 
 type wsWriterWrapper struct {
@@ -55,6 +56,11 @@ func (ws *WSWriter) Write(buf []byte) (int, error) {
 	case WriteError:
 		var respJson []byte
 		resp := model.ErrorResponse{Type: "output/error", Error: string(buf)}
+		respJson, _ = json.Marshal(resp)
+		_, err = ws.Con.Write(respJson)
+	case WriteEnd:
+		var respJson []byte
+		resp := model.ErrorResponse{Type: "output/end", Error: string(buf)}
 		respJson, _ = json.Marshal(resp)
 		_, err = ws.Con.Write(respJson)
 	case WriteTest:

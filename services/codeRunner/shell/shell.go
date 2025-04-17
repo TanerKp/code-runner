@@ -14,7 +14,7 @@ func ShellExecute(ctx context.Context, params ShellExecuteParams) error {
 		return fmt.Errorf("could not retrieve session with key %q", params.SessionKey)
 	}
 
-	err = params.CodeRunner.ContainerService.ExecuteCommand(ctx, sess.Con, params.Stdin)
+	err = params.CodeRunner.ContainerService.ExecuteCommand(ctx, sess.Con, params.Stdin, false)
 	if err != nil {
 		message := fmt.Sprintf("could not execute program with command %q", params.Stdin)
 		errorSlug := errorutil.ErrorSlug()

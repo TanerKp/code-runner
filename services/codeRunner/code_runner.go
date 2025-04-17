@@ -30,7 +30,7 @@ type ContainerService interface {
 	GetReturnCode(context.Context, string) (int, error)
 	GetContainers(context.Context) ([]string, error)
 	CreateInteractiveShell(ctx context.Context, id string) (io.ReadWriteCloser, error)
-	ExecuteCommand(ctx context.Context, con io.ReadWriteCloser, stdin string) error
+	ExecuteCommand(ctx context.Context, con io.ReadWriteCloser, stdin string, withEndMarker bool) error
 }
 type Service struct {
 	sync.Mutex
@@ -149,6 +149,20 @@ func (s *Service) GetContainerConnection(ctx context.Context, sessionKey string,
 					return
 				}
 				if n > 0 {
+					output := string(buf[:n])
+
+					// Ignore prompts
+					if output == "$ " || strings.Contains(output, "( "+sess.CmdID) {
+						continue
+					}
+
+					// Handle end marker
+					if strings.Contains(output, "__DONE__") {
+						writer.WithType(wswriter.WriteEnd).Write(nil)
+						continue
+					}
+
+					// Write output to the writer
 					writer.WithType(wswriter.WriteOutput).Write(buf[:n])
 				}
 			}

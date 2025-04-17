@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/docker/docker/api/types"
 )
@@ -22,8 +23,19 @@ func (cs *Service) RunCommand(ctx context.Context, id string, params RunCommandP
 	return hijackedResponse.Conn, exec.ID, nil
 }
 
-func (cs *Service) ExecuteCommand(ctx context.Context, con io.ReadWriteCloser, stdin string) error {
-	_, err := con.Write(append([]byte(stdin), '\n'))
+func (cs *Service) ExecuteCommand(ctx context.Context, con io.ReadWriteCloser, stdin string, withEndMarker bool) error {
+	cleanInput := strings.ReplaceAll(stdin, "\r\n", "\n")
+	cleanInput = strings.TrimSpace(cleanInput)
+
+	var fullCommand string
+	if withEndMarker {
+		endMarker := "__DONE__"
+		fullCommand = fmt.Sprintf("( %s ; printf \"\\n%s\\n\" 1>&2 )\n", cleanInput, endMarker)
+	} else {
+		fullCommand = fmt.Sprintf("%s\n", cleanInput)
+	}
+
+	_, err := con.Write([]byte(fullCommand))
 	return err
 }
 
@@ -33,7 +45,7 @@ func (cs *Service) CreateInteractiveShell(ctx context.Context, id string) (io.Re
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
-		Tty:          false, // returns only one message without input
+		Tty:          true, // returns only one message without input
 		WorkingDir:   "/code-runner",
 		Cmd:          []string{"/bin/sh"},
 	})

@@ -129,6 +129,7 @@ func (s *Server) handleExecuteRun(ctx context.Context, buf []byte, sessionKey st
 	})
 	if err != nil {
 		wsWriter.WithType(wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "Execute/run failed").Error()))
+		wsWriter.WithType(wswriter.WriteEnd).Write([]byte(errorutil.ErrorWrap(err, "Execute/run failed").Error()))
 	}
 }
 
@@ -157,6 +158,7 @@ func (s *Server) handleExecuteTest(ctx context.Context, buf []byte, sessionKey s
 	})
 	if err != nil {
 		wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "Execute/test failed").Error()))
+		wswriter.NewWriter(c, wswriter.WriteEnd).Write([]byte(errorutil.ErrorWrap(err, "Execute/test failed").Error()))
 		return
 	}
 
@@ -168,6 +170,7 @@ func (s *Server) handleExecuteTest(ctx context.Context, buf []byte, sessionKey s
 		return
 	}
 	wsWriter.WithType(wswriter.WriteTest).Write(testResultJSON)
+	wsWriter.WithType(wswriter.WriteEnd).Write([]byte(""))
 }
 
 func (s *Server) handleExecuteShell(ctx context.Context, buf []byte, sessionKey string, c *websocket.Conn) {
@@ -184,6 +187,8 @@ func (s *Server) handleExecuteShell(ctx context.Context, buf []byte, sessionKey 
 	err := shell.ShellExecute(ctx, shell.ShellExecuteParams{SessionKey: sessionKey, Stdin: shellRequest.Stdin, CodeRunner: s.CodeRunner})
 	if err != nil {
 		wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "Execute/shell failed").Error()))
+		wswriter.NewWriter(c, wswriter.WriteEnd).Write([]byte(errorutil.ErrorWrap(err, "Execute/shell failed").Error()))
+
 	}
 }
 
