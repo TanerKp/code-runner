@@ -149,7 +149,7 @@ func (s *Service) GetContainerConnection(ctx context.Context, sessionKey string,
 					return
 				}
 				if n > 0 {
-					writer.WithType(wswriter.WriteShell).Write(buf[:n])
+					writer.WithType(wswriter.WriteOutput).Write(buf[:n])
 				}
 			}
 		}
