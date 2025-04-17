@@ -165,7 +165,7 @@ func (s *Service) Compile(ctx context.Context, containerID string, compilationCm
 			return err
 		}
 		defer con.Close()
-		err = s.Copy(writer.WithType(wswriter.WriteOutput), con)
+		err = s.Copy(writer.WithType(wswriter.WriteError), con)
 		if err != nil {
 			return err
 		}
