@@ -140,7 +140,7 @@ func (s *Service) GetContainerConnection(ctx context.Context, sessionKey string,
 	stdoutReader, stdoutWriter := io.Pipe()
 	stderrReader, stderrWriter := io.Pipe()
 
-	// stdcopy reads from con and distributes it to the writers
+	// stdcopy liest aus con und verteilt es auf die Writer
 	go func() {
 		defer stdoutWriter.Close()
 		defer stderrWriter.Close()
@@ -228,7 +228,7 @@ func (s *Service) CopyWithTimeout(ctx context.Context) func(w io.Writer, r io.Re
 	return func(w io.Writer, r io.Reader) error {
 		var err error
 		buf := make([]byte, 32*1024)
-		ch := make(chan int, 0)
+		ch := make(chan int)
 		for {
 			var n int
 			var er error
