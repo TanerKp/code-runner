@@ -174,14 +174,9 @@ func (s *Service) GetContainerConnection(ctx context.Context, sessionKey string,
 	}()
 
 	go func() {
-
 		hasErrors := false
 		buf := make([]byte, 1024)
 		lineBuf := bytes.Buffer{}
-
-		defer func() {
-			writer.WriteWithSuccess([]byte(rId), !hasErrors)
-		}()
 
 		for {
 			select {
