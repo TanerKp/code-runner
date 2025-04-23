@@ -108,7 +108,7 @@ func (s *Server) cleanupSession(ctx context.Context, sessionKey string) {
 func (s *Server) handleExecuteRun(ctx context.Context, buf []byte, sessionKey string, c *websocket.Conn, rId string) {
 	var runRequest model.RunRequest
 	if err := request.ParseAndValidateRequest(buf, &runRequest, c); err != nil {
-		wswriter.NewWriter(c, wswriter.WriteEnd).Write([]byte(rId))
+		wswriter.NewWriter(c, wswriter.WriteEnd).WriteWithSuccess([]byte(rId), false)
 		return
 	}
 
@@ -131,7 +131,7 @@ func (s *Server) handleExecuteRun(ctx context.Context, buf []byte, sessionKey st
 	})
 	if err != nil {
 		wsWriter.WithType(wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "Execute/run failed").Error()))
-		wsWriter.WithType(wswriter.WriteEnd).Write([]byte(rId))
+		wsWriter.WriteWithSuccess([]byte(rId), false)
 	}
 
 }
@@ -162,7 +162,7 @@ func (s *Server) handleExecuteTest(ctx context.Context, buf []byte, sessionKey s
 	})
 	if err != nil {
 		wswriter.NewWriter(c, wswriter.WriteError).Write([]byte(errorutil.ErrorWrap(err, "Execute/test failed").Error()))
-		wswriter.NewWriter(c, wswriter.WriteEnd).Write([]byte(rId))
+		wswriter.NewWriter(c, wswriter.WriteEnd).WriteWithSuccess([]byte(rId), false)
 		return
 	}
 
@@ -174,7 +174,7 @@ func (s *Server) handleExecuteTest(ctx context.Context, buf []byte, sessionKey s
 		return
 	}
 	wsWriter.WithType(wswriter.WriteTest).Write(testResultJSON)
-	wsWriter.WithType(wswriter.WriteEnd).Write([]byte(rId))
+	wsWriter.WriteWithSuccess([]byte(rId), true)
 }
 
 func (s *Server) handleExecuteShell(ctx context.Context, buf []byte, sessionKey string, c *websocket.Conn) {

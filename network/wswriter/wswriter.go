@@ -27,6 +27,7 @@ func (w *wsWriterWrapper) Write(buf []byte) (int, error) {
 
 type Writer interface {
 	Write([]byte) (int, error)
+	WriteWithSuccess([]byte, bool) ([]byte, error)
 	GetOutput() []byte
 	WithType(int) Writer
 }
@@ -58,11 +59,6 @@ func (ws *WSWriter) Write(buf []byte) (int, error) {
 		resp := model.ErrorResponse{Type: "output/error", Error: string(buf)}
 		respJson, _ = json.Marshal(resp)
 		_, err = ws.Con.Write(respJson)
-	case WriteEnd:
-		var respJson []byte
-		resp := model.DoneResponse{Type: "output/end", Id: string(buf)}
-		respJson, _ = json.Marshal(resp)
-		_, err = ws.Con.Write(respJson)
 	case WriteTest:
 		_, err = ws.Con.Write(buf)
 	}
@@ -70,6 +66,18 @@ func (ws *WSWriter) Write(buf []byte) (int, error) {
 		return 0, err
 	}
 	return len(buf), nil
+}
+
+func (ws *WSWriter) WriteWithSuccess(id []byte, success bool) ([]byte, error) {
+	var respJson []byte
+	resp := model.DoneResponse{Type: "output/end", Id: string(id), Success: success}
+	respJson, _ = json.Marshal(resp)
+	_, err := ws.Con.Write(respJson)
+
+	if err != nil {
+		return nil, err
+	}
+	return id, nil
 }
 
 func (ws *WSWriter) GetOutput() []byte {

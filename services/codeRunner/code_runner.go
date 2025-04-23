@@ -176,6 +176,7 @@ func (s *Service) GetContainerConnection(ctx context.Context, sessionKey string,
 	}()
 
 	go func() {
+		hasErrors := false
 		scanner := bufio.NewScanner(stderrReader)
 		for scanner.Scan() {
 			select {
@@ -188,10 +189,14 @@ func (s *Service) GetContainerConnection(ctx context.Context, sessionKey string,
 					continue
 				}
 
-				// Check for end marker
 				if strings.TrimSpace(line) == "__DONE__" {
-					writer.WithType(wswriter.WriteEnd).Write([]byte(rId))
+					writer.WriteWithSuccess([]byte(rId), !hasErrors)
+					hasErrors = false
 					continue
+				}
+
+				if strings.Contains(strings.ToLower(line), "error") {
+					hasErrors = true
 				}
 
 				writer.WithType(wswriter.WriteError).Write([]byte(line + "\n"))
