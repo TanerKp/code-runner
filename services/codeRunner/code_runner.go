@@ -1,7 +1,6 @@
 package codeRunner
 
 import (
-	"bufio"
 	"bytes"
 	"code-runner/config"
 	errorutil "code-runner/error_util"
@@ -154,56 +153,76 @@ func (s *Service) GetContainerConnection(ctx context.Context, sessionKey string,
 	}()
 
 	go func() {
-		scanner := bufio.NewScanner(stdoutReader)
-		for scanner.Scan() {
+		buf := make([]byte, 1024)
+		for {
 			select {
 			case <-ctx.Done():
 				return
 			default:
-				line := scanner.Text()
-
-				// Ignore empty lines and lines containing the command ID
-				if line == "" || strings.Contains(line, "( "+sess.CmdID) {
-					continue
+				n, err := stdoutReader.Read(buf)
+				if n > 0 {
+					writer.WithType(wswriter.WriteOutput).Write(buf[:n])
 				}
-
-				writer.WithType(wswriter.WriteOutput).Write([]byte(line + "\n"))
+				if err != nil {
+					if err != io.EOF {
+						writer.WithType(wswriter.WriteError).Write([]byte("stdout read error: " + err.Error()))
+					}
+					return
+				}
 			}
-		}
-		if err := scanner.Err(); err != nil && err != io.EOF {
-			writer.WithType(wswriter.WriteError).Write([]byte("Scan error: " + err.Error()))
 		}
 	}()
 
 	go func() {
+
 		hasErrors := false
-		scanner := bufio.NewScanner(stderrReader)
-		for scanner.Scan() {
+		buf := make([]byte, 1024)
+		lineBuf := bytes.Buffer{}
+
+		defer func() {
+			writer.WriteWithSuccess([]byte(rId), !hasErrors)
+		}()
+
+		for {
 			select {
 			case <-ctx.Done():
 				return
 			default:
-				line := scanner.Text()
+				n, err := stderrReader.Read(buf)
+				if n > 0 {
+					lineBuf.Write(buf[:n])
 
-				if line == "" {
-					continue
+					for {
+						line, err := lineBuf.ReadString('\n')
+						if err != nil {
+							// Line is not complete, stop and continue reading
+							lineBuf.WriteString(line) // write back the potentially missing part
+							break
+						}
+
+						trimmed := strings.TrimSpace(line)
+
+						if trimmed == "" {
+							continue
+						}
+						if trimmed == "__DONE__" {
+							writer.WriteWithSuccess([]byte(rId), !hasErrors)
+							hasErrors = false
+							continue
+						}
+						if strings.Contains(strings.ToLower(trimmed), "error") {
+							hasErrors = true
+						}
+						writer.WithType(wswriter.WriteError).Write([]byte(line))
+					}
 				}
-
-				if strings.TrimSpace(line) == "__DONE__" {
-					writer.WriteWithSuccess([]byte(rId), !hasErrors)
-					hasErrors = false
-					continue
+				if err != nil {
+					if err != io.EOF {
+						writer.WithType(wswriter.WriteError).Write([]byte("stderr read error: " + err.Error()))
+					}
+					return
 				}
-
-				if strings.Contains(strings.ToLower(line), "error") {
-					hasErrors = true
-				}
-
-				writer.WithType(wswriter.WriteError).Write([]byte(line + "\n"))
 			}
-		}
-		if err := scanner.Err(); err != nil && err != io.EOF {
-			writer.WithType(wswriter.WriteError).Write([]byte("stderr scan error: " + err.Error()))
 		}
 	}()
 
