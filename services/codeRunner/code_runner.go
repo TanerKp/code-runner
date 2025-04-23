@@ -1,6 +1,7 @@
 package codeRunner
 
 import (
+	"bufio"
 	"bytes"
 	"code-runner/config"
 	errorutil "code-runner/error_util"
@@ -18,6 +19,8 @@ import (
 	strings "strings"
 	"sync"
 	"time"
+
+	"github.com/docker/docker/pkg/stdcopy"
 )
 
 type ContainerService interface {
@@ -133,39 +136,69 @@ func (s *Service) GetContainerConnection(ctx context.Context, sessionKey string,
 		CancelFunc:  cancel,
 	})
 
+	// Pipe for separate reading of stdout and stderr
+	stdoutReader, stdoutWriter := io.Pipe()
+	stderrReader, stderrWriter := io.Pipe()
+
+	// stdcopy reads from con and distributes it to the writers
 	go func() {
-		buf := make([]byte, 1024)
-		for {
+		defer stdoutWriter.Close()
+		defer stderrWriter.Close()
+		_, err := stdcopy.StdCopy(stdoutWriter, stderrWriter, con)
+		if err != nil && strings.Contains(err.Error(), "use of closed network connection") {
+			return
+		}
+		if err != nil && err != io.EOF {
+			writer.WithType(wswriter.WriteError).Write([]byte("stdcopy error: " + err.Error()))
+		}
+	}()
+
+	go func() {
+		scanner := bufio.NewScanner(stdoutReader)
+		for scanner.Scan() {
 			select {
 			case <-ctx.Done():
 				return
 			default:
-				n, err := con.Read(buf)
-				if err != nil {
-					if err == io.EOF || strings.Contains(err.Error(), "use of closed network connection") {
-						return
-					}
-					writer.WithType(wswriter.WriteError).Write([]byte("Error reading from container: " + err.Error()))
-					return
+				line := scanner.Text()
+
+				// Ignore empty lines and lines containing the command ID
+				if line == "" || strings.Contains(line, "( "+sess.CmdID) {
+					continue
 				}
-				if n > 0 {
-					output := string(buf[:n])
 
-					// Ignore prompts
-					if output == "$ " || strings.Contains(output, "( "+sess.CmdID) {
-						continue
-					}
-
-					// Handle end marker
-					if strings.Contains(output, "__DONE__") {
-						writer.WithType(wswriter.WriteEnd).Write([]byte(rId))
-						continue
-					}
-
-					// Write output to the writer
-					writer.WithType(wswriter.WriteOutput).Write(buf[:n])
-				}
+				writer.WithType(wswriter.WriteOutput).Write([]byte(line + "\n"))
 			}
+		}
+		if err := scanner.Err(); err != nil && err != io.EOF {
+			writer.WithType(wswriter.WriteError).Write([]byte("Scan error: " + err.Error()))
+		}
+	}()
+
+	go func() {
+		scanner := bufio.NewScanner(stderrReader)
+		for scanner.Scan() {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				line := scanner.Text()
+
+				if line == "" {
+					continue
+				}
+
+				// Check for end marker
+				if strings.TrimSpace(line) == "__DONE__" {
+					writer.WithType(wswriter.WriteEnd).Write([]byte(rId))
+					continue
+				}
+
+				writer.WithType(wswriter.WriteError).Write([]byte(line + "\n"))
+			}
+		}
+		if err := scanner.Err(); err != nil && err != io.EOF {
+			writer.WithType(wswriter.WriteError).Write([]byte("stderr scan error: " + err.Error()))
 		}
 	}()
 

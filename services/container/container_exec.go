@@ -29,8 +29,7 @@ func (cs *Service) ExecuteCommand(ctx context.Context, con io.ReadWriteCloser, s
 
 	var fullCommand string
 	if withEndMarker {
-		endMarker := "__DONE__"
-		fullCommand = fmt.Sprintf("( %s ; printf \"\\n%s\\n\" 1>&2 )\n", cleanInput, endMarker)
+		fullCommand = fmt.Sprintf("( %s ; echo \"__DONE__\" 1>&2 )\n", cleanInput)
 	} else {
 		fullCommand = fmt.Sprintf("%s\n", cleanInput)
 	}
@@ -45,15 +44,15 @@ func (cs *Service) CreateInteractiveShell(ctx context.Context, id string) (io.Re
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
-		Tty:          true, // returns only one message without input
+		Tty:          false,
 		WorkingDir:   "/code-runner",
-		Cmd:          []string{"/bin/sh"},
+		Cmd:          []string{"sh", "-c", "PS1='' /bin/sh"},
 	})
 	if err != nil {
 		return nil, errorutil.ErrorWrap(err, "Failed to create interactive shell")
 	}
 
-	hijackedResponse, err := cs.cli.ContainerExecAttach(ctx, exec.ID, types.ExecStartCheck{Tty: true})
+	hijackedResponse, err := cs.cli.ContainerExecAttach(ctx, exec.ID, types.ExecStartCheck{Tty: false})
 	if err != nil {
 		return nil, errorutil.ErrorWrap(err, "Failed to attach to interactive shell")
 	}
