@@ -173,8 +173,17 @@ func (s *Server) handleExecuteTest(ctx context.Context, buf []byte, sessionKey s
 		log.Println(err)
 		return
 	}
+
 	wsWriter.WithType(wswriter.WriteTest).Write(testResultJSON)
-	wsWriter.WriteWithSuccess([]byte(rId), true)
+
+	testsPassed := true
+	for _, result := range testResults {
+		if !result.Passed {
+			testsPassed = false
+			break
+		}
+	}
+	wsWriter.WriteWithSuccess([]byte(rId), testsPassed)
 }
 
 func (s *Server) handleExecuteShell(ctx context.Context, buf []byte, sessionKey string, c *websocket.Conn) {
